@@ -320,27 +320,68 @@ public sealed partial class AssrtProvider : ISubtitleProvider
 
     private async Task<T?> GetAsync<T>(string relativeUrl, CancellationToken cancellationToken)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, relativeUrl);
-        if (!string.IsNullOrWhiteSpace(_settings.Token))
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.Token);
+        Exception? last = null;
+        foreach (string baseUrl in EnumerateApiBases())
+        {
+            string absolute = CombineApiUrl(baseUrl, relativeUrl);
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, absolute);
+                if (!string.IsNullOrWhiteSpace(_settings.Token))
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.Token);
 
-        using HttpResponseMessage resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
-        string body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-        {
-            _logger?.LogWarning("ASSRT request failed ({Code}): {Body}", (int)resp.StatusCode, Truncate(body));
-            return default;
+                using HttpResponseMessage resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+                string body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    last = new HttpRequestException($"HTTP {(int)resp.StatusCode}");
+                    continue;
+                }
+
+                try
+                {
+                    return JsonSerializer.Deserialize<T>(body, JsonOptions);
+                }
+                catch (JsonException)
+                {
+                    _logger?.LogWarning("ASSRT 返回无法解析的数据");
+                    return default;
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or SocketException or IOException)
+            {
+                last = ex;
+            }
         }
 
-        try
+        if (last is not null)
+            throw last;
+        return default;
+    }
+
+    private IEnumerable<string> EnumerateApiBases()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<string>();
+        foreach (string? u in new[] { _settings.BaseUrl }.Concat(_settings.AlternateBaseUrls ?? []))
         {
-            return JsonSerializer.Deserialize<T>(body, JsonOptions);
+            if (string.IsNullOrWhiteSpace(u))
+                continue;
+            string t = u.Trim().TrimEnd('/');
+            if (seen.Add(t))
+                list.Add(t);
         }
-        catch (JsonException ex)
-        {
-            _logger?.LogWarning(ex, "ASSRT JSON parse failed: {Body}", Truncate(body));
-            return default;
-        }
+
+        return list;
+    }
+
+    private static string CombineApiUrl(string baseUrl, string relativeUrl)
+    {
+        if (relativeUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            relativeUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return relativeUrl;
+
+        return baseUrl.TrimEnd('/') + "/" + relativeUrl.TrimStart('/');
     }
 
     private async Task<byte[]> DownloadBytesWithFallbackAsync(string url, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using IcedSubDL.Core.Abstractions;
 using IcedSubDL.Core.Media;
 using IcedSubDL.Core.Models;
@@ -19,23 +20,25 @@ public sealed class SubtitleOrchestrator
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<SubtitleCandidate>> SearchAllAsync(
+    public async Task<(IReadOnlyList<SubtitleCandidate> Candidates, IReadOnlyList<string> Notes)> SearchAllAsync(
         MediaInfo media,
         SearchOptions options,
         CancellationToken cancellationToken = default)
     {
+        var notes = new List<string>();
+
         if (options.SkipIfExternalSrtExists &&
             SubtitleFileNamer.ExternalSrtExists(media, options.Languages))
         {
-            _logger?.LogInformation("Skip {File}: external SRT already present.", media.FileName);
-            return [];
+            notes.Add("已存在外挂字幕，已跳过");
+            return ([], notes);
         }
 
         var configured = _providers.Where(p => p.IsConfigured).ToList();
         if (configured.Count == 0)
         {
-            _logger?.LogWarning("No subtitle providers are configured (API keys/tokens missing).");
-            return [];
+            notes.Add("未配置任何字幕源（请设置 API Key / Token）");
+            return ([], notes);
         }
 
         var tasks = configured.Select(async p =>
@@ -43,20 +46,30 @@ public sealed class SubtitleOrchestrator
             try
             {
                 var hits = await p.SearchAsync(media, options, cancellationToken).ConfigureAwait(false);
-                _logger?.LogInformation("{Provider}: {Count} hit(s) for {File}", p.Name, hits.Count, media.FileName);
-                return hits;
+                return (Hits: hits, Error: (string?)null);
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "{Provider} search failed for {File}", p.Name, media.FileName);
-                return (IReadOnlyList<SubtitleCandidate>)[];
+                return (Hits: (IReadOnlyList<SubtitleCandidate>)[], Error: $"{p.Name}: {FormatShortError(ex)}");
             }
         });
 
         var batches = await Task.WhenAll(tasks).ConfigureAwait(false);
-        var merged = batches.SelectMany(x => x).ToList();
+        foreach (var batch in batches)
+        {
+            if (batch.Error is not null)
+            {
+                notes.Add(batch.Error);
+                _logger?.LogWarning("{Error}", batch.Error);
+            }
+            else if (batch.Hits.Count > 0)
+            {
+                _logger?.LogInformation("找到 {Count} 条候选", batch.Hits.Count);
+            }
+        }
 
-        // Only hard-filter when user explicitly set PreferredFormats
+        var merged = batches.SelectMany(x => x.Hits).ToList();
+
         IEnumerable<SubtitleCandidate> pool = merged;
         if (options.PreferredFormats is { Count: > 0 })
         {
@@ -69,7 +82,7 @@ public sealed class SubtitleOrchestrator
                 pool = filtered;
         }
 
-        return SubtitleScorer.Rank(media, pool, options);
+        return (SubtitleScorer.Rank(media, pool, options), notes);
     }
 
     public async Task<string?> DownloadAndSaveAsync(
@@ -86,7 +99,6 @@ public sealed class SubtitleOrchestrator
         if (provider is null)
             throw new InvalidOperationException($"Provider not found: {candidate.ProviderName}");
 
-        // Providers return raw payload — no archive extraction. Keep original file name.
         SubtitleFile file = await provider.DownloadAsync(candidate, cancellationToken).ConfigureAwait(false);
 
         string outputPath = SubtitleFileNamer.GetOutputPath(
@@ -99,15 +111,14 @@ public sealed class SubtitleOrchestrator
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        // GetOutputPath already de-dupes with " (2)" unless overwrite; if same path still exists and no overwrite, skip.
         if (File.Exists(outputPath) && !options.OverwriteExisting)
         {
-            _logger?.LogWarning("File exists, not overwriting: {Path}", outputPath);
+            _logger?.LogWarning("已存在，跳过: {Path}", outputPath);
             return null;
         }
 
         await File.WriteAllBytesAsync(outputPath, file.Content, cancellationToken).ConfigureAwait(false);
-        _logger?.LogInformation("Saved {Path} ({Bytes} bytes, original name)", outputPath, file.Content.Length);
+        _logger?.LogInformation("已保存 {Path}", outputPath);
         return outputPath;
     }
 
@@ -116,12 +127,14 @@ public sealed class SubtitleOrchestrator
         SearchOptions options,
         CancellationToken cancellationToken = default)
     {
-        var candidates = await SearchAllAsync(media, options, cancellationToken).ConfigureAwait(false);
+        var (candidates, searchNotes) = await SearchAllAsync(media, options, cancellationToken)
+            .ConfigureAwait(false);
+
         if (candidates.Count == 0)
-            return new BatchResult(media, [], [], "No candidates");
+            return new BatchResult(media, [], [], "无结果", searchNotes);
 
         if (options.DownloadMode == DownloadMode.None)
-            return new BatchResult(media, candidates, [], "Search only");
+            return new BatchResult(media, candidates, [], "仅搜索", searchNotes);
 
         IReadOnlyList<SubtitleCandidate> toDownload = options.DownloadMode switch
         {
@@ -132,7 +145,7 @@ public sealed class SubtitleOrchestrator
 
         bool multi = toDownload.Count > 1;
         var saved = new List<string>();
-        var failures = new List<string>();
+        var failures = new List<string>(searchNotes);
 
         for (int i = 0; i < toDownload.Count; i++)
         {
@@ -153,26 +166,65 @@ public sealed class SubtitleOrchestrator
                 if (path is not null)
                     saved.Add(path);
                 else
-                    failures.Add($"[{index}] skipped existing ({candidate.ProviderName} {candidate.ProviderId})");
+                    failures.Add($"[{index}] 已存在，跳过");
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex,
-                    "Download failed [{Index}] {Provider}/{Id}: {Name}",
-                    index,
-                    candidate.ProviderName,
-                    candidate.ProviderId,
-                    candidate.DisplayName);
-                failures.Add($"[{index}] {candidate.DisplayName}: {ex.Message}");
+                string shortMsg = FormatShortError(ex);
+                _logger?.LogWarning("下载失败 [{Index}]: {Message}", index, shortMsg);
+                failures.Add($"[{index}] {shortMsg}");
             }
         }
 
         string status = options.DownloadMode == DownloadMode.Top
-            ? (saved.Count > 0 ? "Downloaded top" : $"Top download failed ({failures.Count})")
-            : $"Downloaded {saved.Count}/{toDownload.Count}" +
-              (failures.Count > 0 ? $", failed {failures.Count}" : string.Empty);
+            ? (saved.Count > 0 ? "已下载（最优）" : "下载失败")
+            : $"已下载 {saved.Count}/{toDownload.Count}" +
+              (failures.Count > searchNotes.Count ? $"，失败 {failures.Count - searchNotes.Count}" : string.Empty);
 
         return new BatchResult(media, candidates, saved, status, failures);
+    }
+
+    public static string FormatShortError(Exception ex)
+    {
+        // Unwrap common wrappers
+        Exception cur = ex;
+        while (cur.InnerException is not null &&
+               (cur is HttpRequestException or AggregateException or TaskCanceledException))
+        {
+            cur = cur.InnerException!;
+        }
+
+        if (cur is SocketException se)
+        {
+            return se.SocketErrorCode switch
+            {
+                SocketError.AccessDenied => "网络被系统拦截（权限/防火墙/代理），请检查网络或稍后重试",
+                SocketError.HostNotFound => "无法解析域名",
+                SocketError.TimedOut => "连接超时",
+                SocketError.ConnectionRefused => "连接被拒绝",
+                SocketError.NetworkUnreachable or SocketError.HostUnreachable => "网络不可达",
+                _ => $"网络错误: {se.Message}"
+            };
+        }
+
+        if (cur is HttpRequestException http)
+        {
+            string m = http.Message;
+            // Strip long host noise: keep first sentence-ish
+            int cut = m.IndexOf(" (");
+            if (cut > 0)
+                m = m[..cut];
+            if (m.Contains("forbidden by its access permissions", StringComparison.OrdinalIgnoreCase) ||
+                m.Contains("AccessDenied", StringComparison.OrdinalIgnoreCase))
+                return "网络被系统拦截（权限/防火墙/代理），请检查网络或稍后重试";
+            return m.Length > 120 ? m[..120] + "…" : m;
+        }
+
+        if (cur is TaskCanceledException)
+            return "请求超时";
+
+        string msg = cur.Message;
+        return msg.Length > 120 ? msg[..120] + "…" : msg;
     }
 }
 

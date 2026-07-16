@@ -38,6 +38,12 @@ public static class SettingsLoader
         settings.Assrt.Token =
             FirstNonEmpty(Environment.GetEnvironmentVariable("ICEDSUBDL_ASSRT_TOKEN"),
                 settings.Assrt.Token);
+        settings.Naming.TmdbApiKey =
+            FirstNonEmpty(Environment.GetEnvironmentVariable("ICEDSUBDL_TMDB_APIKEY"),
+                settings.Naming.TmdbApiKey);
+        settings.Naming.TmdbReadAccessToken =
+            FirstNonEmpty(Environment.GetEnvironmentVariable("ICEDSUBDL_TMDB_TOKEN"),
+                settings.Naming.TmdbReadAccessToken);
 
         return settings;
     }

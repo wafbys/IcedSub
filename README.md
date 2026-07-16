@@ -1,68 +1,205 @@
 # IcedSubDL
 
-多源字幕搜索 / 下载 CLI（.NET 10）。
+多源字幕搜索 / 下载 CLI（**.NET 10**，版本 `0.1.0`）。
 
-## 源
+- 默认命令为 **search**（直接跟查询词即可）
+- **download** 默认下载全部匹配，**保留字幕源原名**（不解压压缩包）
+- **name** 用 TMDB 按 IMDb id 生成中英双语文件名
 
-| Provider | 说明 | 配置 |
+## 字幕源
+
+| Provider | 说明 | 启用条件 |
 |---|---|---|
-| **OpenSubtitles.com** | 国际库，moviehash | `OpenSubtitles:ApiKey` |
-| **ASSRT（伪射手）** | 中文友好 | `Assrt:Token` / `ICEDSUBDL_ASSRT_TOKEN` |
+| **OpenSubtitles.com** | 国际库；对本地视频会算 **moviehash** | `OpenSubtitles:Enabled` + `ApiKey` |
+| **ASSRT（伪射手）** | 中文友好；主站不可达时会尝试备用域名 | `Assrt:Enabled` + `Token` |
 
-> 字幕服务由 [assrt.net](https://assrt.net) 提供（启用 ASSRT 时）
+> 启用 ASSRT 时：字幕服务由 [assrt.net](https://assrt.net) 提供。
 
-## 命令（简化）
+未配置任何源时会提示：`未配置任何字幕源（请设置 API Key / Token）`。启动时会打印：
+
+```text
+providers: OpenSubtitles=on|off  ASSRT=on|off
+```
+
+API 申请：
+
+| 服务 | 地址 |
+|---|---|
+| OpenSubtitles | https://www.opensubtitles.com/en/consumers |
+| ASSRT Token | https://assrt.net 用户面板 |
+| TMDB（`name` 命令） | https://www.themoviedb.org/settings/api |
+
+## 命令
 
 | 用法 | 含义 |
 |---|---|
 | `icedsubdl <query>` | 等同 **search** |
-| `icedsubdl search <query>` | 只搜索 |
-| `icedsubdl download <query>` | 搜索并下载全部匹配（保留原名） |
-| `icedsubdl name <query>` | **预留**（文件名正规化，未实现） |
+| `icedsubdl search <query>` | 只搜索、列出候选 |
+| `icedsubdl download <query>` | 搜索并下载（默认全部匹配） |
+| `icedsubdl name <tt...>` | 按 TMDB 生成中英双语文件名 |
 
-`<query>` 可以是：
+`<query>` 可以是（可多个）：
 
-- 关键字：`火遮眼`
-- 视频文件路径
-- 目录（递归扫视频）
-
-常用选项：
-
-| 选项 | 说明 |
+| 类型 | 行为 |
 |---|---|
-| `-o` / `--out` | 输出目录（关键字下载时） |
-| `-l` / `--lang` | 语言优先级，如 `zh-CN en` |
-| `--top-only` | 只下排名第一（默认全部） |
-| `--overwrite` | 覆盖同名文件 |
+| **关键字** | 文本搜索；无 moviehash |
+| **视频文件** | 解析文件名 + 计算 OpenSubtitles moviehash；字幕默认下到视频同目录 |
+| **目录** | 递归扫描已知视频扩展名后逐个处理 |
+
+支持的视频扩展名（可用配置 `VideoExtensions` 覆盖）：
+
+`.mkv` `.mp4` `.avi` `.mov` `.m4v` `.wmv` `.ts` `.m2ts` `.webm` `.mpeg` `.mpg` `.ogm` `.flv`
+
+### 选项
+
+| 选项 | 适用 | 说明 |
+|---|---|---|
+| `-o` / `--out` | search / download | 关键字查询时的输出目录；默认当前工作目录。视频文件仍优先下到视频所在目录 |
+| `-l` / `--lang` | search / download | 语言优先级，如 `-l zh-CN en`；默认 `zh-CN zh-TW en` |
+| `--top-only` | download | 只下载排名第一；默认下载全部 |
+| `--overwrite` | download | 覆盖同名文件；默认冲突时改为 `文件名 (2).ext` |
 
 ## 示例
 
 ```powershell
-cd C:\Users\YF\WAFBYS\Src\IcedSubDL
-
+# 开发运行（仓库根目录）
 dotnet run --project src\IcedSubDL.Cli -- 火遮眼
 dotnet run --project src\IcedSubDL.Cli -- search 火遮眼
 dotnet run --project src\IcedSubDL.Cli -- download 火遮眼 -o D:\Subs
 dotnet run --project src\IcedSubDL.Cli -- download "D:\Videos\movie.mkv"
-dotnet run --project src\IcedSubDL.Cli -- name "D:\Videos"   # 预留
+dotnet run --project src\IcedSubDL.Cli -- download "D:\Videos" -l zh-CN --top-only
+dotnet run --project src\IcedSubDL.Cli -- name tt33311069
 ```
 
-下载文件名：**保留字幕源原名**（不解压压缩包）。同名冲突时自动加 ` (2)`。
+发布后的 exe 用法相同：
+
+```powershell
+.\publish\win-x64\IcedSubDL.exe 火遮眼
+.\publish\win-x64\IcedSubDL.exe download 火遮眼 -o D:\Subs
+.\publish\win-x64\IcedSubDL.exe name tt33311069
+```
+
+### 下载与命名行为
+
+- 搜索结果按语言优先级、格式、发行名相似度、下载量等打分排序，列表最多展示 **15** 条
+- 下载文件名：**优先使用源站原名**；没有原名时才回退为 `视频名.语言.Provider-Id.ext`
+- **不解压** zip / rar 等；原样保存
+- 同名且未 `--overwrite`：自动 ` (2)`、` (3)`…；已存在时可能显示 `已存在，跳过`
+
+### 命名模式（`name`）
+
+模式（半角括号）：
+
+```text
+The Furious (火遮眼)_2025_Kenji Tanigaki (谷垣健治)_tt33311069
+```
+
+即：`英文 (中文)_年份_导演英文 (导演中文)_imdbId`
+
+- 无中文时省略括号段
+- 中英文相同时不重复括号
+- 元数据来自 **TMDB**（用 IMDb id 反查）
+- 配置 `Naming:TmdbApiKey` 或 `Naming:TmdbReadAccessToken`（Token 优先）；环境变量见下表
 
 ## 配置
 
-```text
-%AppData%\IcedSubDL\appsettings.json
-ICEDSUBDL_ASSRT_TOKEN
-ICEDSUBDL_OPENSUBTITLES_APIKEY
+### 加载顺序（后者覆盖前者）
+
+1. 程序目录下的 `appsettings.json`（开发 / 发布输出旁）
+2. 用户配置：`%AppData%\IcedSubDL\appsettings.json`
+3. 环境变量（前缀 `ICEDSUBDL_`，以及下方显式密钥变量）
+
+示例模板：`src\IcedSubDL.Cli\appsettings.example.json`
+
+### `appsettings.json` 结构
+
+```json
+{
+  "OpenSubtitles": {
+    "Enabled": true,
+    "ApiKey": "YOUR_OPENSUBTITLES_API_KEY",
+    "Username": "optional_username",
+    "Password": "optional_password",
+    "UserAgent": "IcedSubDL v0.1",
+    "BaseUrl": "https://api.opensubtitles.com/api/v1"
+  },
+  "Assrt": {
+    "Enabled": true,
+    "Token": "YOUR_ASSRT_TOKEN",
+    "BaseUrl": "https://api.assrt.net",
+    "AlternateBaseUrls": [
+      "https://api.makedie.me",
+      "http://api.assrt.net"
+    ]
+  },
+  "Naming": {
+    "TmdbApiKey": "YOUR_TMDB_API_KEY",
+    "TmdbReadAccessToken": ""
+  },
+  "Defaults": {
+    "Languages": [ "zh-CN", "zh-TW", "en" ],
+    "PreferredFormats": [],
+    "MaxResultsPerProvider": 15,
+    "SkipIfExternalSrtExists": false,
+    "DownloadMode": "All",
+    "OverwriteExisting": false
+  },
+  "VideoExtensions": [
+    ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv",
+    ".ts", ".m2ts", ".webm", ".mpeg", ".mpg", ".ogm", ".flv"
+  ]
+}
 ```
 
-示例：`src\IcedSubDL.Cli\appsettings.example.json`
+| 配置项 | 说明 |
+|---|---|
+| `Defaults.Languages` | 默认语言优先级（可被 `-l` 覆盖） |
+| `Defaults.PreferredFormats` | 可选格式偏好（仅影响排序 / OpenSubtitles 过滤）；空 = 不限 |
+| `Defaults.MaxResultsPerProvider` | 每源最多结果（ASSRT 上限 15） |
+| `Defaults.DownloadMode` | 配置默认值；CLI 的 download 实际由是否传 `--top-only` 决定（`All` / `Top`） |
+| `Assrt.AlternateBaseUrls` | 主站失败时的备用 API 主机 |
 
-## 发布单文件 exe（Windows x64）
+### 环境变量
+
+| 变量 | 对应配置 |
+|---|---|
+| `ICEDSUBDL_OPENSUBTITLES_APIKEY` | `OpenSubtitles:ApiKey` |
+| `ICEDSUBDL_OPENSUBTITLES_USERNAME` | `OpenSubtitles:Username` |
+| `ICEDSUBDL_OPENSUBTITLES_PASSWORD` | `OpenSubtitles:Password` |
+| `ICEDSUBDL_ASSRT_TOKEN` | `Assrt:Token` |
+| `ICEDSUBDL_TMDB_APIKEY` | `Naming:TmdbApiKey` |
+| `ICEDSUBDL_TMDB_TOKEN` | `Naming:TmdbReadAccessToken` |
+
+## 开发
 
 ```powershell
-cd C:\Users\YF\WAFBYS\Src\IcedSubDL
+# 还原并编译
+dotnet build IcedSubDL.slnx
+
+# 运行测试
+dotnet test IcedSubDL.slnx
+
+# 运行 CLI
+dotnet run --project src\IcedSubDL.Cli -- --help
+```
+
+## 如何 Publish（单文件 exe）
+
+前置：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download)。
+
+`IcedSubDL.Cli.csproj` 已默认：`PublishSingleFile`、`SelfContained`、原生库自解压、单文件压缩。
+
+```powershell
+# 推荐（Windows x64）
+dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
+  -c Release -r win-x64 `
+  -p:DebugType=None -p:DebugSymbols=false `
+  -o publish\win-x64
+```
+
+等价完整参数：
+
+```powershell
 dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
   -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true `
@@ -72,20 +209,28 @@ dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
   -o publish\win-x64
 ```
 
-产物：`publish\win-x64\IcedSubDL.exe`（自包含，无需安装 .NET）
+| 项 | 说明 |
+|---|---|
+| 输出目录 | `publish\win-x64\`（已在 `.gitignore`） |
+| 主程序 | `publish\win-x64\IcedSubDL.exe` |
+| 配置 | 同目录可放 `appsettings.json`；也可使用 `%AppData%\IcedSubDL\` 或环境变量 |
+| 运行时 | `win-x64` **自包含**，目标机无需预装 .NET |
+
+其它 RID：
 
 ```powershell
-.\publish\win-x64\IcedSubDL.exe 火遮眼
-.\publish\win-x64\IcedSubDL.exe download 火遮眼 -o D:\Subs
+dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj -c Release -r linux-x64 -o publish\linux-x64
+dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj -c Release -r osx-arm64 -o publish\osx-arm64
 ```
 
 ## 项目结构
 
 ```text
-src/IcedSubDL.Cli
-src/IcedSubDL.Core
-src/IcedSubDL.Providers      # OpenSubtitles, ASSRT
-src/IcedSubDL.Metadata       # name 预留
-tests/IcedSubDL.Tests
+IcedSubDL.slnx
+src/IcedSubDL.Cli            # CLI 入口、配置加载、System.CommandLine
+src/IcedSubDL.Core           # 扫描、哈希、打分、编排、命名
+src/IcedSubDL.Providers      # OpenSubtitles、ASSRT
+src/IcedSubDL.Metadata       # TMDB 双语命名
+tests/IcedSubDL.Tests        # 单元测试
 publish/win-x64              # 发布输出（gitignore）
 ```

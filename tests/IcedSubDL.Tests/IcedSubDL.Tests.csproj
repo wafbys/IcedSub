@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\IcedSubDL.Core\IcedSubDL.Core.csproj" />
     <ProjectReference Include="..\..\src\IcedSubDL.Providers\IcedSubDL.Providers.csproj" />
+    <ProjectReference Include="..\..\src\IcedSubDL.Metadata\IcedSubDL.Metadata.csproj" />
   </ItemGroup>
 
 </Project>

@@ -36,7 +36,7 @@ API 申请：
 | `icedsubdl <query>` | 等同 **search** |
 | `icedsubdl search <query>` | 只搜索、列出候选 |
 | `icedsubdl download <query>` | 搜索并下载（默认全部匹配） |
-| `icedsubdl name <tt...>` | 按 TMDB 生成中英双语文件名 |
+| `icedsubdl name <tt...>` | 生成规范目录名 `中文_English_(年份)_imdb-id_douban-id` |
 
 `<query>` 可以是（可多个）：
 
@@ -88,18 +88,53 @@ dotnet run --project src\IcedSubDL.Cli -- name tt33311069
 
 ### 命名模式（`name`）
 
-模式（半角括号）：
+模式（半角、下划线分段）：
 
 ```text
-The Furious (火遮眼)_2025_Kenji Tanigaki (谷垣健治)_tt33311069
+中文名_English_(年份)_imdb-ttid_douban-id
 ```
 
-即：`英文 (中文)_年份_导演英文 (导演中文)_imdbId`
+例：
 
-- 无中文时省略括号段
-- 中英文相同时不重复括号
-- 元数据来自 **TMDB**（用 IMDb id 反查）
+```text
+肖申克的救赎_The Shawshank Redemption_(1994)_imdb-tt0111161_douban-1292052
+霸王别姬_Farewell My Concubine_(1993)_imdb-tt0106332_douban-1291546
+```
+
+- 年份用**半角括号**；id 带 `imdb-` / `douban-` 前缀
+- 无中文时省略中文段；中英文相同时只留一段
+- **不含导演**
+- 标题/年份来自 **TMDB**（用 IMDb id 反查）；**豆瓣 id 来自 Wikidata**（`P345` IMDb → `P4529` 豆瓣），查不到则省略 `_douban-…` 段
+- `--douban <id>` 可手动指定豆瓣 id；只给豆瓣 id 时程序会先反查 IMDb id
 - 配置 `Naming:TmdbApiKey` 或 `Naming:TmdbReadAccessToken`（Token 优先）；环境变量见下表
+
+交互用法（默认，TTY 下）：
+
+```text
+> icedsubdl name
+填空：IMDb id / 豆瓣 id 任填其一或都填（回车跳过）。
+  IMDb id (tt...): tt0111161
+  豆瓣 id: 1292052
+正在查询元数据 ... 完成
+逐项确认（回车接受反查值，输入新值覆盖，输入 - 清空）：
+  中文名 [肖申克的救赎]:
+  English [The Shawshank Redemption]:
+  年份 [1994]:
+  imdb-id [tt0111161]:
+  douban-id [1292052]:
+
+确认生成？[Y/n]:
+目录名: 肖申克的救赎_The Shawshank Redemption_(1994)_imdb-tt0111161_douban-1292052
+```
+
+脚本用法（不走交互，直接输出）：
+
+```powershell
+icedsubdl name tt0111161 -y
+icedsubdl name --douban 1292052 -y
+```
+
+> 输入被重定向（管道/CI）时自动进入脚本模式。
 
 ## 配置
 

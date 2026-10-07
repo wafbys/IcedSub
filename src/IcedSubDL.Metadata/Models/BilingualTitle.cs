@@ -1,7 +1,7 @@
 namespace IcedSubDL.Metadata.Models;
 
 /// <summary>
-/// Metadata used for: English (中文)_year_DirectorEn (导演中文)_ttid
+/// Metadata used for: 中文名_English_(year)_imdb-ttid_douban-id
 /// </summary>
 public sealed class BilingualTitle
 {
@@ -14,4 +14,7 @@ public sealed class BilingualTitle
     public string? DirectorZh { get; init; }
     public string? CompanyEn { get; init; }
     public string? CompanyZh { get; init; }
+
+    /// <summary>豆瓣影视 ID（来自 Wikidata P4529；可能为空）。</summary>
+    public string? DoubanId { get; init; }
 }

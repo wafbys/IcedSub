@@ -3,11 +3,24 @@ using IcedSubDL.Cli.Configuration;
 using IcedSubDL.Core.Media;
 using IcedSubDL.Core.Models;
 using IcedSubDL.Core.Services;
+using IcedSubDL.Metadata.Models;
 using IcedSubDL.Metadata.Naming;
 using IcedSubDL.Metadata.Providers;
 using IcedSubDL.Providers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+
+// Windows 控制台默认代码页（如 437/1252）无法表示中文，会把中文写成 "?"。
+// 启动时显式切换为 UTF-8；输出/输入被重定向（无控制台）时忽略失败。
+try
+{
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+    Console.InputEncoding = System.Text.Encoding.UTF8;
+}
+catch (IOException)
+{
+    // No attached console; keep the default encoding.
+}
 
 // Default command is search when none given:
 //   icedsubdl 火遮眼          -> search 火遮眼
@@ -45,9 +58,10 @@ var overwriteOption = new Option<bool>("--overwrite")
     DefaultValueFactory = _ => false
 };
 
-var imdbArg = new Argument<string>("imdb")
+var imdbArg = new Argument<string?>("imdb")
 {
-    Description = "IMDb id，例如 tt33311069"
+    Description = "IMDb id，例如 tt33311069（可省略，进入填空交互）",
+    Arity = ArgumentArity.ZeroOrOne
 };
 
 var searchCommand = new Command("search", "Search subtitles (default command)");
@@ -86,12 +100,28 @@ downloadCommand.SetAction(async (parseResult, ct) =>
 
 var nameCommand = new Command(
     "name",
-    "按 TMDB 生成文件名：English (中文)_year_Director (导演中文)_ttid");
+    "按 TMDB/Wikidata 生成规范目录名：中文_English_(年份)_imdb-id_douban-id");
 nameCommand.Arguments.Add(imdbArg);
+
+var doubanOption = new Option<string?>("--douban")
+{
+    Description = "豆瓣 id（可省略，进入填空交互）"
+};
+nameCommand.Options.Add(doubanOption);
+
+var yesOption = new Option<bool>("--yes", "-y")
+{
+    Description = "不进入填空/确认，直接输出（适合脚本）",
+    DefaultValueFactory = _ => false
+};
+nameCommand.Options.Add(yesOption);
+
 nameCommand.SetAction(async (parseResult, ct) =>
 {
-    string imdb = parseResult.GetValue(imdbArg) ?? string.Empty;
-    await CliApp.RunNameAsync(imdb, ct).ConfigureAwait(false);
+    string? imdb = parseResult.GetValue(imdbArg);
+    string? douban = parseResult.GetValue(doubanOption);
+    bool yes = parseResult.GetValue(yesOption);
+    await CliApp.RunNameAsync(imdb, douban, yes, ct).ConfigureAwait(false);
 });
 
 var root = new RootCommand("IcedSubDL — multi-source subtitle tool");
@@ -107,15 +137,17 @@ root.SetAction(_ =>
     Console.WriteLine("  icedsubdl <query>                 # same as search");
     Console.WriteLine("  icedsubdl search <query>");
     Console.WriteLine("  icedsubdl download <query> [-o dir]");
-    Console.WriteLine("  icedsubdl name <tt...>            # English (中文)_year_Director (中文)_ttid");
+    Console.WriteLine("  icedsubdl name [tt...]            # 填空交互 → 确认 → 输出目录名");
+    Console.WriteLine("  icedsubdl name tt... --douban <id> -y   # 直接输出，不走交互");
     Console.WriteLine();
     Console.WriteLine("Examples:");
     Console.WriteLine("  icedsubdl 火遮眼");
     Console.WriteLine("  icedsubdl download 火遮眼 -o D:\\Subs");
-    Console.WriteLine("  icedsubdl name tt33311069");
+    Console.WriteLine("  icedsubdl name");
+    Console.WriteLine("  icedsubdl name tt0111161");
     Console.WriteLine();
-    Console.WriteLine("Name: The Furious (火遮眼)_2025_Kenji Tanigaki (谷垣健治)_tt33311069");
-    Console.WriteLine("Sources: OpenSubtitles.com, ASSRT; naming via TMDB");
+    Console.WriteLine("Name: 肖申克的救赎_The Shawshank Redemption_(1994)_imdb-tt0111161_douban-1292052");
+    Console.WriteLine("Sources: OpenSubtitles.com, ASSRT; naming via TMDB + Wikidata");
     Console.WriteLine("Config : %AppData%\\IcedSubDL\\appsettings.json");
     Console.WriteLine("        ICEDSUBDL_ASSRT_TOKEN / ICEDSUBDL_TMDB_APIKEY");
 });
@@ -231,18 +263,43 @@ internal static class CliApp
         }
     }
 
-    public static async Task RunNameAsync(string imdbId, CancellationToken ct)
+    public static async Task RunNameAsync(
+        string? imdbId,
+        string? doubanOverride,
+        bool assumeYes,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(imdbId))
+        bool interactive = !assumeYes && !Console.IsInputRedirected;
+
+        string? tt = string.IsNullOrWhiteSpace(imdbId) ? null : imdbId.Trim();
+        string? douban = string.IsNullOrWhiteSpace(doubanOverride) ? null : doubanOverride.Trim();
+
+        if (interactive)
         {
-            Console.WriteLine("请提供 IMDb id，例如：");
-            Console.WriteLine("  icedsubdl name tt33311069");
+            Console.WriteLine("填空：IMDb id / 豆瓣 id 任填其一或都填（回车跳过）。");
+            if (tt is null)
+            {
+                Console.Write("  IMDb id (tt...): ");
+                tt = ReadNotEmpty();
+            }
+            if (douban is null)
+            {
+                Console.Write("  豆瓣 id: ");
+                douban = ReadNotEmpty();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(tt) && string.IsNullOrWhiteSpace(douban))
+        {
+            Console.WriteLine("至少提供一个：IMDb id 或 豆瓣 id。");
+            Console.WriteLine("用法: icedsubdl name [tt...] [--douban <id>] [-y]");
             return;
         }
 
         AppSettings settings = SettingsLoader.Load();
         await using ServiceProvider sp = BuildServices(settings);
         var tmdb = sp.GetRequiredService<TmdbMetadataClient>();
+        var wikidata = sp.GetRequiredService<WikidataDoubanResolver>();
 
         if (!tmdb.IsConfigured)
         {
@@ -253,34 +310,111 @@ internal static class CliApp
             return;
         }
 
-        Console.WriteLine("模式: English (中文)_year_Director (导演中文)_ttid");
-        Console.WriteLine($"查询: {TmdbMetadataClient.NormalizeImdbId(imdbId)}");
-        Console.WriteLine();
-
         try
         {
-            var meta = await tmdb.GetByImdbIdAsync(imdbId, ct).ConfigureAwait(false);
+            // 只给豆瓣 id 时，先反查 IMDb id（TMDB 需要它取标题）。
+            if (string.IsNullOrWhiteSpace(tt) && !string.IsNullOrWhiteSpace(douban))
+            {
+                Console.WriteLine($"正在由豆瓣 id {douban} 反查 IMDb id ...");
+                string? resolved = await wikidata.GetImdbIdAsync(douban, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(resolved))
+                {
+                    Console.WriteLine("无法由该豆瓣 id 反查到 IMDb id（Wikidata 可能未收录）。");
+                    return;
+                }
+
+                tt = resolved;
+                Console.WriteLine($"  → {tt}");
+            }
+
+            Console.Write("正在查询元数据 ...");
+            var meta = await tmdb.GetByImdbIdAsync(tt!, ct, douban).ConfigureAwait(false);
+            Console.WriteLine(" 完成");
+            Console.WriteLine();
+
             if (meta is null)
             {
                 Console.WriteLine("未找到元数据（TMDB 可能尚未收录，或 id 有误）。");
                 return;
             }
 
-            string fileName = BilingualNamePattern.Build(meta);
-            Console.WriteLine($"TMDB:  {meta.TmdbId}");
-            Console.WriteLine($"IMDb:  {meta.ImdbId}");
-            Console.WriteLine($"EN:    {meta.TitleEn}");
-            Console.WriteLine($"ZH:    {meta.TitleZh ?? "-"}");
-            Console.WriteLine($"Year:  {meta.Year ?? "-"}");
-            Console.WriteLine($"DirEN: {meta.DirectorEn ?? "-"}");
-            Console.WriteLine($"DirZH: {meta.DirectorZh ?? "-"}");
-            Console.WriteLine();
-            Console.WriteLine($"文件名: {fileName}");
+            if (interactive)
+                meta = EditFields(meta);
+            else
+                PrintFields(meta);
+
+            string name = BilingualNamePattern.Build(meta);
+
+            if (interactive)
+            {
+                Console.WriteLine();
+                Console.Write("确认生成？[Y/n]: ");
+                string? ans = Console.ReadLine()?.Trim().ToLowerInvariant();
+                if (ans is "n" or "no")
+                {
+                    Console.WriteLine("已取消。");
+                    return;
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine($"目录名: {name}");
         }
         catch (Exception ex)
         {
             Console.WriteLine("失败: " + SubtitleOrchestrator.FormatShortError(ex));
         }
+    }
+
+    private static void PrintFields(BilingualTitle meta)
+    {
+        Console.WriteLine($"TMDB:  {meta.TmdbId}");
+        Console.WriteLine($"IMDb:  {meta.ImdbId}");
+        Console.WriteLine($"Douban:{meta.DoubanId ?? "-"}");
+        Console.WriteLine($"ZH:    {meta.TitleZh ?? "-"}");
+        Console.WriteLine($"EN:    {meta.TitleEn}");
+        Console.WriteLine($"Year:  {meta.Year ?? "-"}");
+    }
+
+    /// <summary>
+    /// 逐项回车确认当前反查值，或输入新值覆盖；输入 "-" 清空该段。
+    /// </summary>
+    private static BilingualTitle EditFields(BilingualTitle meta)
+    {
+        Console.WriteLine("逐项确认（回车接受反查值，输入新值覆盖，输入 - 清空）：");
+
+        string zh = PromptField("中文名", meta.TitleZh);
+        string en = PromptField("English", meta.TitleEn);
+        string year = PromptField("年份", meta.Year);
+        string imdb = PromptField("imdb-id", meta.ImdbId);
+        string douban = PromptField("douban-id", meta.DoubanId);
+
+        return new BilingualTitle
+        {
+            ImdbId = imdb,
+            TmdbId = meta.TmdbId,
+            TitleEn = en,
+            TitleZh = string.IsNullOrEmpty(zh) ? null : zh,
+            Year = string.IsNullOrEmpty(year) ? null : year,
+            DoubanId = string.IsNullOrEmpty(douban) ? null : douban
+        };
+    }
+
+    private static string PromptField(string label, string? current)
+    {
+        Console.Write($"  {label} [{current ?? ""}]: ");
+        string input = (Console.ReadLine() ?? string.Empty).Trim();
+        if (input.Length == 0)
+            return current ?? string.Empty;
+        if (input == "-")
+            return string.Empty;
+        return input;
+    }
+
+    private static string? ReadNotEmpty()
+    {
+        string? line = Console.ReadLine();
+        return string.IsNullOrWhiteSpace(line) ? null : line.Trim();
     }
 
     public static ServiceProvider BuildServices(AppSettings settings)
@@ -308,6 +442,20 @@ internal static class CliApp
             c.BaseAddress = new Uri("https://api.themoviedb.org/3/");
             c.Timeout = TimeSpan.FromSeconds(30);
         });
+        services.AddHttpClient("wikidata", c =>
+        {
+            c.BaseAddress = new Uri("https://query.wikidata.org/");
+            c.Timeout = TimeSpan.FromSeconds(30);
+            c.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "IcedSubDL/0.1 (subtitle tool; +https://github.com/local/IcedSubDL)");
+            c.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/sparql-results+json");
+        });
+        services.AddTransient(sp =>
+        {
+            var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("wikidata");
+            return new WikidataDoubanResolver(http, sp.GetService<ILogger<WikidataDoubanResolver>>());
+        });
         services.AddTransient(sp =>
         {
             var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("tmdb");
@@ -315,7 +463,8 @@ internal static class CliApp
                 http,
                 settings.Naming.TmdbApiKey,
                 settings.Naming.TmdbReadAccessToken,
-                sp.GetService<ILogger<TmdbMetadataClient>>());
+                sp.GetService<ILogger<TmdbMetadataClient>>(),
+                sp.GetService<WikidataDoubanResolver>());
         });
 
         return services.BuildServiceProvider();

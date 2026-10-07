@@ -16,6 +16,7 @@ public sealed partial class TmdbMetadataClient
     private readonly string? _apiKey;
     private readonly string? _readToken;
     private readonly ILogger<TmdbMetadataClient>? _logger;
+    private readonly WikidataDoubanResolver? _doubanResolver;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -26,12 +27,14 @@ public sealed partial class TmdbMetadataClient
         HttpClient http,
         string? apiKey,
         string? readAccessToken = null,
-        ILogger<TmdbMetadataClient>? logger = null)
+        ILogger<TmdbMetadataClient>? logger = null,
+        WikidataDoubanResolver? doubanResolver = null)
     {
         _http = http;
         _apiKey = apiKey;
         _readToken = readAccessToken;
         _logger = logger;
+        _doubanResolver = doubanResolver;
 
         if (_http.BaseAddress is null)
             _http.BaseAddress = new Uri("https://api.themoviedb.org/3/");
@@ -50,7 +53,10 @@ public sealed partial class TmdbMetadataClient
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(_apiKey) || !string.IsNullOrWhiteSpace(_readToken);
 
-    public async Task<BilingualTitle?> GetByImdbIdAsync(string imdbId, CancellationToken ct = default)
+    public async Task<BilingualTitle?> GetByImdbIdAsync(
+        string imdbId,
+        CancellationToken ct = default,
+        string? doubanOverride = null)
     {
         if (!IsConfigured)
             throw new InvalidOperationException(
@@ -147,6 +153,9 @@ public sealed partial class TmdbMetadataClient
         if (string.IsNullOrWhiteSpace(titleEn))
             return null;
 
+        string? doubanId = await ResolveDoubanIdAsync(imdbId, doubanOverride, ct)
+            .ConfigureAwait(false);
+
         return new BilingualTitle
         {
             ImdbId = imdbId,
@@ -155,8 +164,23 @@ public sealed partial class TmdbMetadataClient
             TitleZh = titleZh,
             Year = year,
             DirectorEn = directorEn,
-            DirectorZh = directorZh
+            DirectorZh = directorZh,
+            DoubanId = doubanId
         };
+    }
+
+    private async Task<string?> ResolveDoubanIdAsync(
+        string imdbId,
+        string? doubanOverride,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(doubanOverride))
+            return doubanOverride.Trim();
+
+        if (_doubanResolver is null)
+            return null;
+
+        return await _doubanResolver.GetDoubanIdAsync(imdbId, ct).ConfigureAwait(false);
     }
 
     private async Task<string?> GetPersonChineseNameAsync(int personId, string? enName, CancellationToken ct)

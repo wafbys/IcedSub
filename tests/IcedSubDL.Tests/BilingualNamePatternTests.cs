@@ -11,25 +11,41 @@ public class BilingualNamePatternTests
     {
         var meta = new BilingualTitle
         {
-            ImdbId = "tt33311069",
-            TitleEn = "The Furious",
-            TitleZh = "火遮眼",
-            Year = "2025",
-            DirectorEn = "Kenji Tanigaki",
-            DirectorZh = "谷垣健治"
+            ImdbId = "tt0111161",
+            TitleEn = "The Shawshank Redemption",
+            TitleZh = "肖申克的救赎",
+            Year = "1994",
+            DoubanId = "1292052"
         };
 
         string name = BilingualNamePattern.Build(meta);
-        Assert.Equal("The Furious (火遮眼)_2025_Kenji Tanigaki (谷垣健治)_tt33311069", name);
+        Assert.Equal("肖申克的救赎_The Shawshank Redemption_(1994)_imdb-tt0111161_douban-1292052", name);
     }
 
     [Fact]
-    public void FormatBilingual_UsesHalfWidthParens()
+    public void Build_FarewellMyConcubine()
     {
-        Assert.Equal("A (乙)", BilingualNamePattern.FormatBilingual("A", "乙"));
-        Assert.Equal("A", BilingualNamePattern.FormatBilingual("A", null));
-        Assert.Equal("乙", BilingualNamePattern.FormatBilingual(null, "乙"));
-        Assert.Equal("Same", BilingualNamePattern.FormatBilingual("Same", "Same"));
+        var meta = new BilingualTitle
+        {
+            ImdbId = "tt0106332",
+            TitleEn = "Farewell My Concubine",
+            TitleZh = "霸王别姬",
+            Year = "1993",
+            DoubanId = "1291546"
+        };
+
+        Assert.Equal(
+            "霸王别姬_Farewell My Concubine_(1993)_imdb-tt0106332_douban-1291546",
+            BilingualNamePattern.Build(meta));
+    }
+
+    [Fact]
+    public void FormatTitle_ChineseFirst_JoinedByUnderscore()
+    {
+        Assert.Equal("乙_A", BilingualNamePattern.FormatTitle("乙", "A"));
+        Assert.Equal("A", BilingualNamePattern.FormatTitle(null, "A"));
+        Assert.Equal("乙", BilingualNamePattern.FormatTitle("乙", null));
+        Assert.Equal("Same", BilingualNamePattern.FormatTitle("Same", "Same"));
     }
 
     [Fact]
@@ -47,7 +63,7 @@ public class BilingualNamePatternTests
     }
 
     [Fact]
-    public void Build_OmitsMissingDirector()
+    public void Build_OmitsMissingDoubanAndDirector()
     {
         var meta = new BilingualTitle
         {
@@ -56,6 +72,19 @@ public class BilingualNamePatternTests
             TitleZh = "佛",
             Year = "2020"
         };
-        Assert.Equal("Foo (佛)_2020_tt1", BilingualNamePattern.Build(meta));
+        Assert.Equal("佛_Foo_(2020)_imdb-tt1", BilingualNamePattern.Build(meta));
+    }
+
+    [Fact]
+    public void Build_NoChinese_FallsBackToEnglishOnly()
+    {
+        var meta = new BilingualTitle
+        {
+            ImdbId = "tt9",
+            TitleEn = "Foo",
+            Year = "2020",
+            DoubanId = "123"
+        };
+        Assert.Equal("Foo_(2020)_imdb-tt9_douban-123", BilingualNamePattern.Build(meta));
     }
 }

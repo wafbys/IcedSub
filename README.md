@@ -4,7 +4,7 @@
 
 - 默认命令为 **search**（直接跟查询词即可）
 - **download** 默认下载全部匹配，**保留字幕源原名**（不解压压缩包）
-- **name** 用 TMDB 按 IMDb id 生成中英双语文件名（电影 / 剧集）
+- **name** 用 TMDB 按 IMDb id 生成中英双语文件名（电影 / 剧集；未配置 TMDB 时 Wikidata 兜底）
 
 ## 字幕源
 
@@ -106,7 +106,8 @@ dotnet run --project src\IcedSub.Cli -- name tt33311069
 - **不含导演**
 - 标题/年份来自 **TMDB**（用 IMDb id 反查；电影取 `title`/`release_date`，剧集取 `name`/`first_air_date`）；**豆瓣 id 来自 Wikidata**（`P345` IMDb → `P4529` 豆瓣），查不到则省略 `_douban-…` 段
 - `--douban <id>` 可手动指定豆瓣 id；只给豆瓣 id 时程序会先反查 IMDb id
-- 配置 `Naming:TmdbApiKey` 或 `Naming:TmdbReadAccessToken`（Token 优先）；环境变量见下表
+- **未配置 TMDB（或 TMDB 未收录）时自动用 Wikidata 兜底**：中文取 `zh` 标签、英文取 `en` 标签、年份取 `P577` 最早年份；Wikidata 覆盖不全，冷门 / 新片可能查不到
+- 配置 `Naming:TmdbApiKey` 或 `Naming:TmdbReadAccessToken`（Token 优先；可选，不配则走 Wikidata 兜底）；环境变量见下表
 
 交互用法（默认，TTY 下）：
 

@@ -301,40 +301,52 @@ internal static class CliApp
         var tmdb = sp.GetRequiredService<TmdbMetadataClient>();
         var wikidata = sp.GetRequiredService<WikidataDoubanResolver>();
 
-        if (!tmdb.IsConfigured)
-        {
-            Console.WriteLine("未配置 TMDB。");
-            Console.WriteLine("  在 appsettings.json 设置 Naming:TmdbApiKey");
-            Console.WriteLine("  或环境变量 ICEDSUB_TMDB_APIKEY");
-            Console.WriteLine("  申请：https://www.themoviedb.org/settings/api");
-            return;
-        }
-
         try
         {
-            // 只给豆瓣 id 时，先反查 IMDb id（TMDB 需要它取标题）。
-            if (string.IsNullOrWhiteSpace(tt) && !string.IsNullOrWhiteSpace(douban))
+            BilingualTitle? meta = null;
+
+            if (tmdb.IsConfigured)
             {
-                Console.WriteLine($"正在由豆瓣 id {douban} 反查 IMDb id ...");
-                string? resolved = await wikidata.GetImdbIdAsync(douban, ct).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(resolved))
+                // 只给豆瓣 id 时，先反查 IMDb id（TMDB 需要它取标题）。
+                if (string.IsNullOrWhiteSpace(tt) && !string.IsNullOrWhiteSpace(douban))
                 {
-                    Console.WriteLine("无法由该豆瓣 id 反查到 IMDb id（Wikidata 可能未收录）。");
-                    return;
+                    Console.WriteLine($"正在由豆瓣 id {douban} 反查 IMDb id ...");
+                    string? resolved = await wikidata.GetImdbIdAsync(douban, ct).ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(resolved))
+                        Console.WriteLine("无法由该豆瓣 id 反查到 IMDb id（Wikidata 可能未收录）。");
+                    else
+                    {
+                        tt = resolved;
+                        Console.WriteLine($"  → {tt}");
+                    }
                 }
 
-                tt = resolved;
-                Console.WriteLine($"  → {tt}");
+                if (!string.IsNullOrWhiteSpace(tt))
+                {
+                    Console.Write("正在查询元数据 (TMDB) ...");
+                    meta = await tmdb.GetByImdbIdAsync(tt!, ct, douban).ConfigureAwait(false);
+                    Console.WriteLine(" 完成");
+                }
             }
 
-            Console.Write("正在查询元数据 ...");
-            var meta = await tmdb.GetByImdbIdAsync(tt!, ct, douban).ConfigureAwait(false);
-            Console.WriteLine(" 完成");
+            if (meta is null)
+            {
+                // 兜底：未配置 TMDB，或 TMDB 未收录时，用免密钥的 Wikidata。
+                if (!tmdb.IsConfigured)
+                    Console.WriteLine("未配置 TMDB，改用 Wikidata 兜底（覆盖可能不全；配置 ICEDSUB_TMDB_APIKEY 可提高准确性）。");
+                else
+                    Console.WriteLine("TMDB 未收录，改用 Wikidata 兜底。");
+
+                Console.Write("正在查询元数据 (Wikidata) ...");
+                meta = await wikidata.GetTitleAsync(tt, douban, ct).ConfigureAwait(false);
+                Console.WriteLine(" 完成");
+            }
+
             Console.WriteLine();
 
             if (meta is null)
             {
-                Console.WriteLine("未找到元数据（TMDB 可能尚未收录，或 id 有误）。");
+                Console.WriteLine("未找到元数据（TMDB / Wikidata 均未收录，或 id 有误）。");
                 return;
             }
 
@@ -368,7 +380,7 @@ internal static class CliApp
 
     private static void PrintFields(BilingualTitle meta)
     {
-        Console.WriteLine($"TMDB:  {meta.TmdbId}");
+        Console.WriteLine($"TMDB:  {(meta.TmdbId?.ToString() ?? "-")}");
         Console.WriteLine($"IMDb:  {meta.ImdbId}");
         Console.WriteLine($"Douban:{meta.DoubanId ?? "-"}");
         Console.WriteLine($"ZH:    {meta.TitleZh ?? "-"}");

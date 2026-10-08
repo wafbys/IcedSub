@@ -4,7 +4,7 @@
 
 - 默认命令为 **search**（直接跟查询词即可）
 - **download** 默认下载全部匹配，**保留字幕源原名**（不解压压缩包）
-- **name** 用 TMDB 按 IMDb id 生成中英双语文件名
+- **name** 用 TMDB 按 IMDb id 生成中英双语文件名（电影 / 剧集）
 
 ## 字幕源
 
@@ -104,7 +104,7 @@ dotnet run --project src\IcedSub.Cli -- name tt33311069
 - 年份用**半角括号**；id 带 `imdb-` / `douban-` 前缀
 - 无中文时省略中文段；中英文相同时只留一段
 - **不含导演**
-- 标题/年份来自 **TMDB**（用 IMDb id 反查）；**豆瓣 id 来自 Wikidata**（`P345` IMDb → `P4529` 豆瓣），查不到则省略 `_douban-…` 段
+- 标题/年份来自 **TMDB**（用 IMDb id 反查；电影取 `title`/`release_date`，剧集取 `name`/`first_air_date`）；**豆瓣 id 来自 Wikidata**（`P345` IMDb → `P4529` 豆瓣），查不到则省略 `_douban-…` 段
 - `--douban <id>` 可手动指定豆瓣 id；只给豆瓣 id 时程序会先反查 IMDb id
 - 配置 `Naming:TmdbApiKey` 或 `Naming:TmdbReadAccessToken`（Token 优先）；环境变量见下表
 
@@ -226,7 +226,7 @@ dotnet run --project src\IcedSub.Cli -- --help
 # run-debug：等价于 dotnet run --project src\IcedSub.Cli -- ...
 .\run-debug.ps1 search 火遮眼
 
-# run-release：运行 publish\win-x64\IcedSub.exe（不存在时先自动 publish）
+# run-release：运行 publish\win-x64\IcedSub.exe（不存在或源码更新时先自动 publish）
 .\run-release.ps1 download "D:\Videos" -l zh-CN --top-only
 ```
 

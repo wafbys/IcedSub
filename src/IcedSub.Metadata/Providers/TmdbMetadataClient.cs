@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace IcedSub.Metadata.Providers;
 
 /// <summary>
-/// TMDB API v3 — 用 IMDb id 反查，再取中英标题与导演。
+/// TMDB API v3 — 用 IMDb id 反查电影或剧集，再取中英标题与年份（导演仅电影）。
+/// 电影字段 title/release_date，剧集字段 name/first_air_date。
 /// 文档：https://developer.themoviedb.org/docs
 /// </summary>
 public sealed partial class TmdbMetadataClient
@@ -75,6 +76,8 @@ public sealed partial class TmdbMetadataClient
             return null;
 
         int? tmdbId = null;
+        bool isTv = false;
+
         if (findDoc.RootElement.TryGetProperty("movie_results", out var movies) &&
             movies.ValueKind == JsonValueKind.Array &&
             movies.GetArrayLength() > 0)
@@ -89,63 +92,82 @@ public sealed partial class TmdbMetadataClient
             tvs.ValueKind == JsonValueKind.Array &&
             tvs.GetArrayLength() > 0)
         {
-            // 本版本命名以电影为主；剧集可后续扩展
             tmdbId = tvs[0].TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number
                 ? idEl.GetInt32()
                 : null;
-            if (tmdbId is not null)
-                _logger?.LogWarning("tt 对应的是剧集 TMDB={Id}，当前按电影接口可能失败", tmdbId);
+            isTv = tmdbId is not null;
         }
 
         if (tmdbId is null)
             return null;
 
+        if (isTv)
+            _logger?.LogInformation("tt 对应剧集 TMDB={Id}，按 tv 接口取剧名 / 首播年", tmdbId);
+
+        // 电影与剧集字段名不同：title/release_date vs name/first_air_date
+        string detailsPath = isTv ? "tv" : "movie";
+
         // 2) details en / zh
-        using var enDoc = await GetJsonAsync($"movie/{tmdbId}?language=en-US", ct).ConfigureAwait(false);
-        using var zhDoc = await GetJsonAsync($"movie/{tmdbId}?language=zh-CN", ct).ConfigureAwait(false);
+        using var enDoc = await GetJsonAsync($"{detailsPath}/{tmdbId}?language=en-US", ct).ConfigureAwait(false);
+        using var zhDoc = await GetJsonAsync($"{detailsPath}/{tmdbId}?language=zh-CN", ct).ConfigureAwait(false);
         if (enDoc is null)
             return null;
 
-        string titleEn = GetString(enDoc.RootElement, "title")
-                         ?? GetString(enDoc.RootElement, "original_title")
+        string titleEn = (isTv
+                             ? GetString(enDoc.RootElement, "name")
+                             : GetString(enDoc.RootElement, "title"))
+                         ?? (isTv
+                             ? GetString(enDoc.RootElement, "original_name")
+                             : GetString(enDoc.RootElement, "original_title"))
                          ?? string.Empty;
-        string? titleZh = zhDoc is null ? null : GetString(zhDoc.RootElement, "title");
-        // 若中文 title 仍是英文，可尝试 original_title 是否中文
-        if (titleZh is not null && LooksMostlyLatin(titleZh) && !LooksMostlyLatin(GetString(zhDoc!.RootElement, "original_title")))
-            titleZh = GetString(zhDoc.RootElement, "original_title");
+
+        string? titleZh = zhDoc is null
+            ? null
+            : (isTv ? GetString(zhDoc.RootElement, "name") : GetString(zhDoc.RootElement, "title"));
+        string? zhOriginal = zhDoc is null
+            ? null
+            : (isTv ? GetString(zhDoc.RootElement, "original_name") : GetString(zhDoc.RootElement, "original_title"));
+        // 若中文名仍是英文，可尝试 original_* 是否中文
+        if (titleZh is not null && LooksMostlyLatin(titleZh) && !LooksMostlyLatin(zhOriginal))
+            titleZh = zhOriginal;
         if (titleZh is not null && string.Equals(titleZh, titleEn, StringComparison.OrdinalIgnoreCase))
             titleZh = null;
 
         string? year = null;
-        string? release = GetString(enDoc.RootElement, "release_date");
+        string? release = isTv
+            ? GetString(enDoc.RootElement, "first_air_date")
+            : GetString(enDoc.RootElement, "release_date");
         if (!string.IsNullOrWhiteSpace(release) && release.Length >= 4)
             year = release[..4];
 
-        // 3) credits + director bilingual
-        using var credits = await GetJsonAsync($"movie/{tmdbId}/credits", ct).ConfigureAwait(false);
+        // 3) 导演（命名不含导演；剧集走 tv 接口，不取 credits）
         string? directorEn = null;
-        int? directorPersonId = null;
-        if (credits is not null &&
-            credits.RootElement.TryGetProperty("crew", out var crew) &&
-            crew.ValueKind == JsonValueKind.Array)
+        string? directorZh = null;
+        if (!isTv)
         {
-            foreach (var c in crew.EnumerateArray())
+            using var credits = await GetJsonAsync($"movie/{tmdbId}/credits", ct).ConfigureAwait(false);
+            int? directorPersonId = null;
+            if (credits is not null &&
+                credits.RootElement.TryGetProperty("crew", out var crew) &&
+                crew.ValueKind == JsonValueKind.Array)
             {
-                if (!string.Equals(GetString(c, "job"), "Director", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                directorEn = GetString(c, "name");
-                if (c.TryGetProperty("id", out var pid) && pid.ValueKind == JsonValueKind.Number)
-                    directorPersonId = pid.GetInt32();
-                break;
+                foreach (var c in crew.EnumerateArray())
+                {
+                    if (!string.Equals(GetString(c, "job"), "Director", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    directorEn = GetString(c, "name");
+                    if (c.TryGetProperty("id", out var pid) && pid.ValueKind == JsonValueKind.Number)
+                        directorPersonId = pid.GetInt32();
+                    break;
+                }
             }
+
+            if (directorPersonId is int personId)
+                directorZh = await GetPersonChineseNameAsync(personId, directorEn, ct).ConfigureAwait(false);
         }
 
-        string? directorZh = null;
-        if (directorPersonId is int personId)
-            directorZh = await GetPersonChineseNameAsync(personId, directorEn, ct).ConfigureAwait(false);
-
         // external id 校验
-        using var ext = await GetJsonAsync($"movie/{tmdbId}/external_ids", ct).ConfigureAwait(false);
+        using var ext = await GetJsonAsync($"{detailsPath}/{tmdbId}/external_ids", ct).ConfigureAwait(false);
         string? imdbFromTmdb = ext is null ? null : GetString(ext.RootElement, "imdb_id");
         if (!string.IsNullOrWhiteSpace(imdbFromTmdb))
             imdbId = NormalizeImdbId(imdbFromTmdb);

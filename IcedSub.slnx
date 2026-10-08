@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IcedSub.Cli/IcedSub.Cli.csproj" />
+    <Project Path="src/IcedSub.Core/IcedSub.Core.csproj" />
+    <Project Path="src/IcedSub.Metadata/IcedSub.Metadata.csproj" />
+    <Project Path="src/IcedSub.Providers/IcedSub.Providers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IcedSub.Tests/IcedSub.Tests.csproj" />
+  </Folder>
+</Solution>

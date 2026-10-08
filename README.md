@@ -1,4 +1,4 @@
-# IcedSubDL
+# IcedSub
 
 多源字幕搜索 / 下载 CLI（**.NET 10**，版本 `0.1.0`）。
 
@@ -33,10 +33,10 @@ API 申请：
 
 | 用法 | 含义 |
 |---|---|
-| `icedsubdl <query>` | 等同 **search** |
-| `icedsubdl search <query>` | 只搜索、列出候选 |
-| `icedsubdl download <query>` | 搜索并下载（默认全部匹配） |
-| `icedsubdl name <tt...>` | 生成规范目录名 `中文_English_(年份)_imdb-id_douban-id` |
+| `icedsub <query>` | 等同 **search** |
+| `icedsub search <query>` | 只搜索、列出候选 |
+| `icedsub download <query>` | 搜索并下载（默认全部匹配） |
+| `icedsub name <tt...>` | 生成规范目录名 `中文_English_(年份)_imdb-id_douban-id` |
 
 `<query>` 可以是（可多个）：
 
@@ -63,20 +63,20 @@ API 申请：
 
 ```powershell
 # 开发运行（仓库根目录）
-dotnet run --project src\IcedSubDL.Cli -- 火遮眼
-dotnet run --project src\IcedSubDL.Cli -- search 火遮眼
-dotnet run --project src\IcedSubDL.Cli -- download 火遮眼 -o D:\Subs
-dotnet run --project src\IcedSubDL.Cli -- download "D:\Videos\movie.mkv"
-dotnet run --project src\IcedSubDL.Cli -- download "D:\Videos" -l zh-CN --top-only
-dotnet run --project src\IcedSubDL.Cli -- name tt33311069
+dotnet run --project src\IcedSub.Cli -- 火遮眼
+dotnet run --project src\IcedSub.Cli -- search 火遮眼
+dotnet run --project src\IcedSub.Cli -- download 火遮眼 -o D:\Subs
+dotnet run --project src\IcedSub.Cli -- download "D:\Videos\movie.mkv"
+dotnet run --project src\IcedSub.Cli -- download "D:\Videos" -l zh-CN --top-only
+dotnet run --project src\IcedSub.Cli -- name tt33311069
 ```
 
 发布后的 exe 用法相同：
 
 ```powershell
-.\publish\win-x64\IcedSubDL.exe 火遮眼
-.\publish\win-x64\IcedSubDL.exe download 火遮眼 -o D:\Subs
-.\publish\win-x64\IcedSubDL.exe name tt33311069
+.\publish\win-x64\IcedSub.exe 火遮眼
+.\publish\win-x64\IcedSub.exe download 火遮眼 -o D:\Subs
+.\publish\win-x64\IcedSub.exe name tt33311069
 ```
 
 ### 下载与命名行为
@@ -111,7 +111,7 @@ dotnet run --project src\IcedSubDL.Cli -- name tt33311069
 交互用法（默认，TTY 下）：
 
 ```text
-> icedsubdl name
+> icedsub name
 填空：IMDb id / 豆瓣 id 任填其一或都填（回车跳过）。
   IMDb id (tt...): tt0111161
   豆瓣 id: 1292052
@@ -130,8 +130,8 @@ dotnet run --project src\IcedSubDL.Cli -- name tt33311069
 脚本用法（不走交互，直接输出）：
 
 ```powershell
-icedsubdl name tt0111161 -y
-icedsubdl name --douban 1292052 -y
+icedsub name tt0111161 -y
+icedsub name --douban 1292052 -y
 ```
 
 > 输入被重定向（管道/CI）时自动进入脚本模式。
@@ -141,10 +141,10 @@ icedsubdl name --douban 1292052 -y
 ### 加载顺序（后者覆盖前者）
 
 1. 程序目录下的 `appsettings.json`（开发 / 发布输出旁）
-2. 用户配置：`%AppData%\IcedSubDL\appsettings.json`
-3. 环境变量（前缀 `ICEDSUBDL_`，以及下方显式密钥变量）
+2. 用户配置：`%AppData%\IcedSub\appsettings.json`
+3. 环境变量（前缀 `ICEDSUB_`，以及下方显式密钥变量）
 
-示例模板：`src\IcedSubDL.Cli\appsettings.example.json`
+示例模板：`src\IcedSub.Cli\appsettings.example.json`
 
 ### `appsettings.json` 结构
 
@@ -155,7 +155,7 @@ icedsubdl name --douban 1292052 -y
     "ApiKey": "YOUR_OPENSUBTITLES_API_KEY",
     "Username": "optional_username",
     "Password": "optional_password",
-    "UserAgent": "IcedSubDL v0.1",
+    "UserAgent": "IcedSub v0.1",
     "BaseUrl": "https://api.opensubtitles.com/api/v1"
   },
   "Assrt": {
@@ -198,35 +198,47 @@ icedsubdl name --douban 1292052 -y
 
 | 变量 | 对应配置 |
 |---|---|
-| `ICEDSUBDL_OPENSUBTITLES_APIKEY` | `OpenSubtitles:ApiKey` |
-| `ICEDSUBDL_OPENSUBTITLES_USERNAME` | `OpenSubtitles:Username` |
-| `ICEDSUBDL_OPENSUBTITLES_PASSWORD` | `OpenSubtitles:Password` |
-| `ICEDSUBDL_ASSRT_TOKEN` | `Assrt:Token` |
-| `ICEDSUBDL_TMDB_APIKEY` | `Naming:TmdbApiKey` |
-| `ICEDSUBDL_TMDB_TOKEN` | `Naming:TmdbReadAccessToken` |
+| `ICEDSUB_OPENSUBTITLES_APIKEY` | `OpenSubtitles:ApiKey` |
+| `ICEDSUB_OPENSUBTITLES_USERNAME` | `OpenSubtitles:Username` |
+| `ICEDSUB_OPENSUBTITLES_PASSWORD` | `OpenSubtitles:Password` |
+| `ICEDSUB_ASSRT_TOKEN` | `Assrt:Token` |
+| `ICEDSUB_TMDB_APIKEY` | `Naming:TmdbApiKey` |
+| `ICEDSUB_TMDB_TOKEN` | `Naming:TmdbReadAccessToken` |
 
 ## 开发
 
 ```powershell
 # 还原并编译
-dotnet build IcedSubDL.slnx
+dotnet build IcedSub.slnx
 
 # 运行测试
-dotnet test IcedSubDL.slnx
+dotnet test IcedSub.slnx
 
 # 运行 CLI
-dotnet run --project src\IcedSubDL.Cli -- --help
+dotnet run --project src\IcedSub.Cli -- --help
+```
+
+### 快捷脚本
+
+仓库根目录提供两个包装脚本，参数与退出码原样透传给 CLI：
+
+```powershell
+# run-debug：等价于 dotnet run --project src\IcedSub.Cli -- ...
+.\run-debug.ps1 search 火遮眼
+
+# run-release：运行 publish\win-x64\IcedSub.exe（不存在时先自动 publish）
+.\run-release.ps1 download "D:\Videos" -l zh-CN --top-only
 ```
 
 ## 如何 Publish（单文件 exe）
 
 前置：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download)。
 
-`IcedSubDL.Cli.csproj` 已默认：`PublishSingleFile`、`SelfContained`、原生库自解压、单文件压缩。
+`IcedSub.Cli.csproj` 已默认：`PublishSingleFile`、`SelfContained`、原生库自解压、单文件压缩。
 
 ```powershell
 # 推荐（Windows x64）
-dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
+dotnet publish src\IcedSub.Cli\IcedSub.Cli.csproj `
   -c Release -r win-x64 `
   -p:DebugType=None -p:DebugSymbols=false `
   -o publish\win-x64
@@ -235,7 +247,7 @@ dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
 等价完整参数：
 
 ```powershell
-dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
+dotnet publish src\IcedSub.Cli\IcedSub.Cli.csproj `
   -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true `
   -p:IncludeNativeLibrariesForSelfExtract=true `
@@ -247,25 +259,25 @@ dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj `
 | 项 | 说明 |
 |---|---|
 | 输出目录 | `publish\win-x64\`（已在 `.gitignore`） |
-| 主程序 | `publish\win-x64\IcedSubDL.exe` |
-| 配置 | 同目录可放 `appsettings.json`；也可使用 `%AppData%\IcedSubDL\` 或环境变量 |
+| 主程序 | `publish\win-x64\IcedSub.exe` |
+| 配置 | 同目录可放 `appsettings.json`；也可使用 `%AppData%\IcedSub\` 或环境变量 |
 | 运行时 | `win-x64` **自包含**，目标机无需预装 .NET |
 
 其它 RID：
 
 ```powershell
-dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj -c Release -r linux-x64 -o publish\linux-x64
-dotnet publish src\IcedSubDL.Cli\IcedSubDL.Cli.csproj -c Release -r osx-arm64 -o publish\osx-arm64
+dotnet publish src\IcedSub.Cli\IcedSub.Cli.csproj -c Release -r linux-x64 -o publish\linux-x64
+dotnet publish src\IcedSub.Cli\IcedSub.Cli.csproj -c Release -r osx-arm64 -o publish\osx-arm64
 ```
 
 ## 项目结构
 
 ```text
-IcedSubDL.slnx
-src/IcedSubDL.Cli            # CLI 入口、配置加载、System.CommandLine
-src/IcedSubDL.Core           # 扫描、哈希、打分、编排、命名
-src/IcedSubDL.Providers      # OpenSubtitles、ASSRT
-src/IcedSubDL.Metadata       # TMDB 双语命名
-tests/IcedSubDL.Tests        # 单元测试
+IcedSub.slnx
+src/IcedSub.Cli            # CLI 入口、配置加载、System.CommandLine
+src/IcedSub.Core           # 扫描、哈希、打分、编排、命名
+src/IcedSub.Providers      # OpenSubtitles、ASSRT
+src/IcedSub.Metadata       # TMDB 双语命名
+tests/IcedSub.Tests        # 单元测试
 publish/win-x64              # 发布输出（gitignore）
 ```

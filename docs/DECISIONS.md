@@ -7,7 +7,7 @@
 > - 推翻一条决策时**不要删除**，改为 `已废弃` 并注明被哪条取代。
 > - 讨论中产生的矛盾先记到「矛盾与开放问题」，达成一致后再升级为决策。
 
-最后更新：2026-10-07
+最后更新：2026-10-08
 
 ---
 
@@ -31,7 +31,7 @@
 - **决定**：
   - **配置**：便携旁置（**application-local / sidecar config**），即与 exe 同目录的 `appsettings.json`。
   - **密钥**（OpenSubtitles Key、ASSRT Token、TMDB Key）：**走环境变量**，不写进旁置配置文件。
-  - **默认禁用** `%AppData%\IcedSubDL\` 这一层（可保留为显式开启的兼容选项）。
+  - **默认禁用** `%AppData%\IcedSub\` 这一层（可保留为显式开启的兼容选项）。
 - **理由**：兼顾“便携”（配置随程序走）与“安全”（密钥不进会被备份/同步/误提交的文件）。
 - **后果**：新机器需设置环境变量后才能用密钥类功能。
 
@@ -78,7 +78,7 @@
 ### D10 rank_videos.py
 - **状态**：暂定
 - **决定**：**保持独立**，继续负责“目录内选发行版 + KEEP/DROP 标记”。
-  - IcedSubDL **只复用其探测能力的一小部分**（duration / fps / resolution / 内嵌字幕轨），在 C# 里另建 `MediaProbe`。
+  - IcedSub **只复用其探测能力的一小部分**（duration / fps / resolution / 内嵌字幕轨），在 C# 里另建 `MediaProbe`。
   - **不整包移植**；如未来要单 exe 全包，再单独评估移植排序逻辑。
 - **理由**：Python/ffprobe 栈与 .NET 单文件冲突；两者是“选片”与“配字幕”的不同阶段。
 
@@ -102,6 +102,15 @@
   - `-y` / `--yes`（或输入被重定向）时跳过交互，直接输出，适合脚本。
 - **理由**：中文在前便于检索；id 带前缀便于识别来源；豆瓣补齐中文世界的第二主键。
 - **后果**：与旧格式（`English (中文)_year_Director…`）**不兼容**；README、帮助文本、测试已同步；豆瓣 id 依赖 Wikidata，覆盖不全时会缺段。
+
+### D13 产品命名（IcedSub）
+- **状态**：已定（2026-10-08 用户拍板）
+- **决定**：产品名由 **IcedSubDL** 改为 **IcedSub**，同步更名：
+  - 解决方案 `IcedSub.slnx`；项目 / 命名空间 `IcedSub.Cli|Core|Providers|Metadata|Tests`；exe / 程序集 `IcedSub.exe`。
+  - 环境变量前缀 `ICEDSUB_`；用户配置目录 `%AppData%\IcedSub\`。
+  - README、帮助文本、`run-debug.ps1` / `run-release.ps1` 同步。
+- **理由**：`Iced` 为个人品牌前缀（与 `IcedPicViewer` / `IcedUserScript` 一致）；`SubDL` 只表达“下载”，而项目已扩展到搜索、命名、媒体库整理，且 `SubDL` 与既有 `subdl` 工具 / 站点撞名；`IcedSub` 更准且更短。
+- **后果**：**env 前缀与配置目录为破坏性变更**——旧 `ICEDSUBDL_*` 环境变量与 `%AppData%\IcedSubDL\` 配置不再生效（当前无外部用户，影响可控）。仓库根目录已一并由 `IcedSubDL` 重命名为 `IcedSub`。
 
 ---
 
@@ -128,7 +137,7 @@
 - **需你确认**：剧集目录名是否也带 tt，以及是否保留“导演”段。
 
 ### C5 rank_videos “不信任文件名” ↔ 本工具重度依赖文件名
-- **现象**：rank_videos 明确“评分从不使用文件名（声明不可核验）”；而 IcedSubDL 的匹配几乎全在文件名上。
+- **现象**：rank_videos 明确“评分从不使用文件名（声明不可核验）”；而 IcedSub 的匹配几乎全在文件名上。
 - **我的建议**：统一原则——**身份来自目录 id，技术事实来自探测，文件名只做候选筛选/展示**。逐步降低对文件名字符串匹配的依赖。
 - **需你确认**：是否接受这条总原则。
 
